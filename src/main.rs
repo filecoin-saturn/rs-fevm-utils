@@ -1,7 +1,13 @@
 use std::{fs::read_to_string, path::PathBuf, str::FromStr};
 
-use ethers::types::{Address, Eip1559TransactionRequest};
-use fevm_utils::{filecoin_to_eth_address, get_provider, get_wallet_signing_provider, send_tx};
+use fevm_utils::{
+    filecoin_to_eth_address, get_provider, get_wallet_signing_provider, send_tx, set_tx_gas,
+};
+
+use ethers::{
+    providers::Middleware,
+    types::{transaction::eip2718::TypedTransaction, Address, Eip1559TransactionRequest},
+};
 
 #[tokio::main]
 pub async fn main() {
@@ -25,10 +31,19 @@ pub async fn main() {
     assert_eq!(eth_addr, "0x52963ef50e27e06d72d59fcb4f3c2a687be3cfef");
 
     // craft the tx (Filecoin doesn't support legacy transactions)
-    let tx = Eip1559TransactionRequest::new()
+    let mut fund_tx: TypedTransaction = Eip1559TransactionRequest::new()
         .to(Address::from_str(&eth_addr).unwrap())
-        .value(1000)
-        .from(client.address()); // specify the `from` field so that the client knows which account to use
+        .value(1)
+        .from(client.address())
+        .into(); // specify the `from` field so that the client knows which account to use
+
+    let gas_price = client.provider().get_gas_price().await.unwrap();
+    let tx = fund_tx.clone();
+    set_tx_gas(
+        &mut fund_tx,
+        client.estimate_gas(&tx, None).await.unwrap(),
+        gas_price,
+    );
 
     // because of the longer blocktimes we need to increase the number of tries.
     let retries = 10;
