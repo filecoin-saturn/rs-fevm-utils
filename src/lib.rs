@@ -32,7 +32,8 @@ use async_recursion::async_recursion;
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use ethers::core::k256::ecdsa::SigningKey;
-use ethers::prelude::{HDPath, Ledger};
+use ethers::prelude::HDPath::LedgerLive;
+use ethers::prelude::Ledger;
 use ethers::signers::Signer;
 use ethers::signers::{coins_bip39::English, MnemonicBuilder};
 use ethers::types::transaction::eip2718::TypedTransaction;
@@ -52,7 +53,6 @@ use std::fs;
 use std::sync::Arc;
 
 const DEFAULT_DERIVATION_PATH_PREFIX: &str = "m/44'/60'/0'/0/";
-const DEFAULT_LEDGER_FIL_DERIVATION_PATH: &str = "44'/461'/0'/0/0";
 
 const GAS_LIMIT_MULTIPLIER: i32 = 130;
 // The hash length used for calculating address checksums.
@@ -268,11 +268,10 @@ pub async fn get_ledger_signing_provider(
     provider: Provider<Http>,
     chain_id: u64,
 ) -> Result<SignerMiddleware<Arc<Provider<Http>>, Ledger>, Box<dyn Error>> {
-    let ledger = Ledger::new(
-        HDPath::Other(DEFAULT_LEDGER_FIL_DERIVATION_PATH.to_string()),
-        chain_id,
-    )
-    .await?;
+    // Note: Support for signing transactions using the Ledger Filecoin app still hasn't landed yet and is WIP.
+    // So, the workaround for now is to use the Ethereum Ledger App for signing Filecoin transactions
+    // after funding the corresponding "Ethereum account" on the Filecoin mainnet with funds.
+    let ledger = Ledger::new(LedgerLive(0), chain_id).await?;
     let provider = Arc::new(provider);
 
     Ok(SignerMiddleware::new(provider, ledger))
