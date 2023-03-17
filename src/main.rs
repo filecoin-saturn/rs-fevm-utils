@@ -1,7 +1,7 @@
 use std::{fs::read_to_string, path::PathBuf, str::FromStr};
 
 use ethers::types::{Address, Eip1559TransactionRequest};
-use fevm_utils::{filecoin_to_eth_address, get_signing_provider, send_tx};
+use fevm_utils::{filecoin_to_eth_address, get_provider, get_wallet_signing_provider, send_tx};
 
 #[tokio::main]
 pub async fn main() {
@@ -11,8 +11,12 @@ pub async fn main() {
     // rpc for hyperspace testnet
     let rpc_url = "https://api.hyperspace.node.glif.io/rpc/v1";
 
+    let provider = get_provider(rpc_url).unwrap();
+
     let mnemonic = read_to_string(secret).unwrap();
-    let client = get_signing_provider(&mnemonic, rpc_url).await.unwrap();
+    let client = get_wallet_signing_provider(provider, &mnemonic)
+        .await
+        .unwrap();
 
     // recipient to send fil to
     let addr = "t410fkkld55ioe7qg24wvt7fu6pbknb56ht7pt4zamxa";

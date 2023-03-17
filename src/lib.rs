@@ -32,6 +32,7 @@ use async_recursion::async_recursion;
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use ethers::core::k256::ecdsa::SigningKey;
+use ethers::prelude::{HDPath, Ledger};
 use ethers::signers::Signer;
 use ethers::signers::{coins_bip39::English, MnemonicBuilder};
 use ethers::types::transaction::eip2718::TypedTransaction;
@@ -51,6 +52,8 @@ use std::fs;
 use std::sync::Arc;
 
 const DEFAULT_DERIVATION_PATH_PREFIX: &str = "m/44'/60'/0'/0/";
+const DEFAULT_LEDGER_FIL_DERIVATION_PATH: &str = "44'/461'/0'/0/0";
+
 const GAS_LIMIT_MULTIPLIER: i32 = 130;
 // The hash length used for calculating address checksums.
 const CHECKSUM_HASH_LENGTH: usize = 4;
@@ -200,9 +203,9 @@ pub fn set_tx_gas(tx: &mut TypedTransaction, gas_estimate: U256, gas_price: U256
 }
 
 /// Sends a constructed tx
-pub async fn send_tx(
+pub async fn send_tx<S: Middleware + 'static>(
     tx: &TypedTransaction,
-    client: SignerMiddleware<Arc<Provider<Http>>, Wallet<SigningKey>>,
+    client: S,
     retries: usize,
 ) -> Result<TransactionReceipt, Box<dyn Error>> {
     let pending_tx = client.send_transaction(tx.clone(), None).await?;
@@ -251,14 +254,35 @@ fn get_signing_wallet(private_key: U256, chain_id: u64) -> Result<Wallet<Signing
     Ok(wallet.with_chain_id(chain_id))
 }
 
-/// Obtains a [SignerMiddleWare] from an RPC url and a mnemonic string.
-/// The middleware can be used for locally signing and broadcasting transactions.
-pub async fn get_signing_provider(
-    mnemonic: &str,
-    rpc_url: &str,
-) -> Result<SignerMiddleware<Arc<Provider<Http>>, Wallet<SigningKey>>, Box<dyn Error>> {
+/// get_provider returns a JSON RPC HTTP Provider for the Filecoin Blockchain
+pub fn get_provider(rpc_url: &str) -> Result<Provider<Http>, Box<dyn Error>> {
     let provider = Provider::<Http>::try_from(rpc_url)?;
     debug!("{:#?}", provider);
+    Ok(provider)
+}
+
+/// Obtains a Ledger hardware wallet backed [SignerMiddleWare] from an provider and a chain id.
+/// This middleware can be used for locally signing and broadcasting transactions while the hardware
+/// wallet is connected to the machine.
+pub async fn get_ledger_signing_provider(
+    provider: Provider<Http>,
+    chain_id: u64,
+) -> Result<SignerMiddleware<Arc<Provider<Http>>, Ledger>, Box<dyn Error>> {
+    let ledger = Ledger::new(
+        HDPath::Other(DEFAULT_LEDGER_FIL_DERIVATION_PATH.to_string()),
+        chain_id,
+    )
+    .await?;
+    let provider = Arc::new(provider);
+
+    Ok(SignerMiddleware::new(provider, ledger))
+}
+/// Obtains a [SignerMiddleWare] from an RPC url and a mnemonic string.
+/// The middleware can be used for locally signing and broadcasting transactions.
+pub async fn get_wallet_signing_provider(
+    provider: Provider<Http>,
+    mnemonic: &str,
+) -> Result<SignerMiddleware<Arc<Provider<Http>>, Wallet<SigningKey>>, Box<dyn Error>> {
     let chain_id = provider.get_chainid().await?;
     let private_key = derive_key(mnemonic, DEFAULT_DERIVATION_PATH_PREFIX, 0)?;
     let signing_wallet = get_signing_wallet(private_key, chain_id.as_u64())?;
