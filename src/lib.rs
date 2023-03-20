@@ -26,6 +26,10 @@
 
 //! A library for fEVM related utililty functions in rust
 //!
+//!
+
+/// FVM and fEVM local executors (for testing purposes)
+pub mod executor;
 
 use ::ethers::contract::Contract;
 use async_recursion::async_recursion;

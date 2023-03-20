@@ -99,3 +99,30 @@ RUST_LOG=debug cargo run
 
 ```
 
+
+### Local executor 
+
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.19;
+
+contract HelloWorld {
+    function sayHelloWorld() public pure returns (string memory) {
+        return "Hello World";
+    }
+}
+
+```
+
+Now run: 
+
+```bash
+
+solc contracts/HelloWorld.sol --output-dir ./build/tests --overwrite --bin --hashes --opcodes --abi
+
+```
+
+The generated `.bin` file is the one we're interested in for the fEVM. 
+
+
