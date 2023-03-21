@@ -1,12 +1,11 @@
 use cid::Cid;
 use ethers::abi::Token;
-use ethers_solc::Project;
 use fil_actor_eam::Return;
 use fil_actor_evm::Method as EvmMethods;
 use fil_actors_runtime::EAM_ACTOR_ADDR;
 use fvm::executor::{ApplyKind, ApplyRet, Executor};
 use fvm::gas::Gas;
-use fvm::machine::Manifest;
+use fvm::machine::{Machine, Manifest};
 use fvm::trace::{ExecutionEvent, ExecutionTrace};
 use fvm_integration_tests::bundle;
 use fvm_integration_tests::dummy::DummyExterns;
@@ -39,21 +38,35 @@ pub type GasResult = Vec<(String, u64)>;
 ///
 const PARAMS_CBOR_HEADER: &str = "58";
 
+#[derive(thiserror::Error, Debug)]
+/// Errors related to address parsing
+#[allow(missing_docs)]
+pub enum ExecutorError {
+    #[error("uninitialized state")]
+    UninitializedState,
+    #[error("uninitialized executor")]
+    UninitializedExecutor,
+    #[error("uninitialized sequence")]
+    UninitializedSequence,
+    #[error("unnable to load actors")]
+    BadActors,
+}
+
 ///
 #[allow(unused)]
 pub struct TestExecutor {
     tester: Tester<MemoryBlockstore, DummyExterns>,
-    sender: [Account; 300],
+    accounts: [Account; 300],
     sequence: HashMap<Account, u64>,
 }
 
 impl TestExecutor {
-    ///
+    /// Instantiates a new local executor. Requires a local build of `builtin-actors`.
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let (mut tester, _manifest) = setup_tester()?;
 
         // NOTE: can't be less than 200
-        let sender: [Account; 300] = tester.create_accounts()?;
+        let accounts: [Account; 300] = tester.create_accounts()?;
 
         // Create embryo address to deploy a contract on it (+ assign some FILs to it)
         // TODO: make this random
@@ -71,13 +84,60 @@ impl TestExecutor {
         // Instantiate machinerust
         tester.instantiate_machine(DummyExterns)?;
 
-        let sequence = HashMap::from_iter(sender.into_iter().zip(vec![0; sender.len()]));
+        let sequence = HashMap::from_iter(accounts.into_iter().zip(vec![0; accounts.len()]));
 
         Ok(TestExecutor {
             tester,
-            sender,
+            accounts,
             sequence,
         })
+    }
+
+    /// Fetches balance for a specific actor id
+    pub fn get_balance(&self, actor_id: u64) -> Result<TokenAmount, Box<dyn Error>> {
+        Ok(self
+            .tester
+            .executor
+            .as_ref()
+            .ok_or_else(|| ExecutorError::UninitializedExecutor)?
+            .state_tree()
+            .get_actor(actor_id)
+            .map_err(|_| ExecutorError::UninitializedState)?
+            .ok_or_else(|| ExecutorError::UninitializedState)?
+            .balance)
+    }
+
+    /// Sends funds from an account to an address
+    pub fn send_funds(
+        &mut self,
+        from: Account,
+        to: Address,
+        value: TokenAmount,
+    ) -> Result<ApplyRet, Box<dyn Error>> {
+        let sequence = self
+            .sequence
+            .get_mut(&from)
+            .ok_or_else(|| ExecutorError::UninitializedSequence)?;
+
+        let message = Message {
+            from: from.1,
+            to,
+            gas_limit: 1000000000,
+            value,
+            sequence: sequence.clone(),
+            ..Message::default()
+        };
+
+        *sequence = *sequence + 1;
+
+        let res = self
+            .tester
+            .executor
+            .as_mut()
+            .ok_or_else(|| ExecutorError::UninitializedExecutor)?
+            .execute_message(message, ApplyKind::Explicit, 100)?;
+
+        Ok(res)
     }
 }
 
@@ -86,7 +146,7 @@ impl Debug for TestExecutor {
         f.debug_struct("TestExecutor")
             .field("executor", &"DefaultExecutor")
             .field("constructor_params", &"ExternalParams")
-            .field("sender", &self.sender[0])
+            .field("sender", &self.accounts[0])
             .finish()
     }
 }
@@ -95,21 +155,26 @@ impl Debug for TestExecutor {
 #[derive(Debug, Clone)]
 #[allow(unused)]
 pub struct CallResult {
-    result: ApplyRet,
-    gas_used: (String, u64),
+    /// result from call
+    pub result: ApplyRet,
+    /// tuple of ("label", gas_consumed)
+    pub gas_used: (String, u64),
 }
 
-///
+/// Contract type
 #[derive(Debug)]
 #[allow(unused)]
 pub struct Contract {
-    id: u64,
+    /// contract actor id
+    pub id: u64,
+    /// contract address
+    pub address: Address,
     calls: Vec<CallResult>,
     abi: ethers::abi::Abi,
 }
 
 impl Contract {
-    ///
+    /// deploys a new contract using a instantiated test executor, an account to pay for gas, and paths to solc generated `.bin` and `.abi` files for a solidity contract.
     pub fn deploy(
         test_executor: &mut TestExecutor,
         sender_idx: usize,
@@ -123,8 +188,11 @@ impl Contract {
 
         let constructor_params = CreateExternalParams(evm_bin);
 
-        let sender = test_executor.sender[sender_idx];
-        let sequence = test_executor.sequence.get_mut(&sender).unwrap();
+        let sender = test_executor.accounts[sender_idx];
+        let sequence = test_executor
+            .sequence
+            .get_mut(&sender)
+            .ok_or_else(|| ExecutorError::UninitializedSequence)?;
 
         let message = Message {
             from: sender.1,
@@ -142,12 +210,12 @@ impl Contract {
             .tester
             .executor
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| ExecutorError::UninitializedExecutor)?
             .execute_message(message, ApplyKind::Explicit, 100)?;
 
         assert_eq!(res.msg_receipt.exit_code.value(), 0);
 
-        let exec_return: Return = RawBytes::deserialize(&res.msg_receipt.return_data).unwrap();
+        let exec_return: Return = RawBytes::deserialize(&res.msg_receipt.return_data)?;
 
         info!(
             "Contract address [{}]",
@@ -174,11 +242,12 @@ impl Contract {
                 result: res,
                 gas_used: ("deploy".into(), gas_used),
             }],
+            address: Address::new_id(exec_return.actor_id),
             abi: load_abi(abi_path)?,
         })
     }
 
-    ///
+    /// Calls a function on a deployed contract using a instantiated test executor, an account to pay for gas, a method name to call and a list of tokens / parameters to call.
     pub fn call_fn(
         &mut self,
         test_executor: &mut TestExecutor,
@@ -186,11 +255,11 @@ impl Contract {
         method_name: &str,
         tokens: &[Token],
     ) -> Result<(), Box<dyn Error>> {
-        let mut params = hex::decode(PARAMS_CBOR_HEADER).unwrap();
+        let mut params = hex::decode(PARAMS_CBOR_HEADER)?;
 
-        let abi_func = self.abi.function(method_name).unwrap();
+        let abi_func = self.abi.function(method_name)?;
 
-        let call_bytes: Vec<u8> = abi_func.encode_input(tokens).unwrap();
+        let call_bytes: Vec<u8> = abi_func.encode_input(tokens)?;
         let num_bytes = call_bytes.len().to_be_bytes();
         let num_bytes = num_bytes.iter().filter(|x| **x != 0);
         params.extend(num_bytes);
@@ -204,8 +273,11 @@ impl Contract {
 
         let params = RawBytes::new(params);
 
-        let sender = test_executor.sender[sender_idx];
-        let sequence = test_executor.sequence.get_mut(&sender).unwrap();
+        let sender = test_executor.accounts[sender_idx];
+        let sequence = test_executor
+            .sequence
+            .get_mut(&sender)
+            .ok_or_else(|| ExecutorError::UninitializedSequence)?;
         let message = Message {
             from: sender.1,
             to: Address::new_id(self.id),
@@ -222,7 +294,7 @@ impl Contract {
             .tester
             .executor
             .as_mut()
-            .unwrap()
+            .ok_or_else(|| ExecutorError::UninitializedExecutor)?
             .execute_message(message, ApplyKind::Explicit, 100)?;
         let gas_used = parse_gas(&res.exec_trace);
 
@@ -233,12 +305,12 @@ impl Contract {
         Ok(())
     }
 
-    ///
+    /// gets the last call made to a contract
     pub fn last_call(&self) -> CallResult {
         self.calls[self.calls.len() - 1].clone()
     }
 
-    ///
+    /// creates a gas table across previous calls to contract functions
     pub fn create_gas_table(&self) -> Table {
         let mut table = Table::new();
         table.add_row(row!["Function", "Gas"]);
@@ -255,15 +327,17 @@ impl Contract {
     }
 }
 
-///
+/// Helper function for creating a tester. Requires a build of the mainnet-bundle from `builtin-actors`
 pub fn setup_tester() -> Result<(Tester<MemoryBlockstore, DummyExterns>, Manifest), Box<dyn Error>>
 {
     let bs = MemoryBlockstore::default();
     let actors = std::fs::read("./builtin-actors/output/builtin-actors-mainnet.car")?;
     let bundle_root = bundle::import_bundle(&bs, &actors)?;
 
-    let (manifest_version, manifest_data_cid): (u32, Cid) =
-        bs.get_cbor(&bundle_root).unwrap().unwrap();
+    let (manifest_version, manifest_data_cid): (u32, Cid) = match bs.get_cbor(&bundle_root)? {
+        Some(b) => b,
+        None => return Err(Box::new(ExecutorError::BadActors)),
+    };
     let manifest = Manifest::load(&bs, &manifest_data_cid, manifest_version)?;
 
     let tester = Tester::new(NetworkVersion::V18, StateTreeVersion::V5, bundle_root, bs)?;
@@ -272,21 +346,8 @@ pub fn setup_tester() -> Result<(Tester<MemoryBlockstore, DummyExterns>, Manifes
 }
 
 ///
-pub fn compile_project_contracts() -> Result<(), Box<dyn Error>> {
-    // configure the project with all its paths, solc, cache etc.
-    let project = Project::builder().build()?;
-    let output = project.compile()?;
-
-    trace!("compile output {}", output);
-
-    // Tell Cargo that if a source file changes, to rerun this build script.
-    project.rerun_if_sources_changed();
-    Ok(())
-}
-
-///
 pub fn load_evm(path: &str) -> Result<Vec<u8>, Box<dyn Error>> {
-    let wasm_path = std::env::current_dir().unwrap().join(path).canonicalize()?;
+    let wasm_path = std::env::current_dir()?.join(path).canonicalize()?;
     let evm_hex = std::fs::read(wasm_path)?;
 
     Ok(hex::decode(evm_hex)?)
@@ -294,14 +355,14 @@ pub fn load_evm(path: &str) -> Result<Vec<u8>, Box<dyn Error>> {
 
 ///
 pub fn load_abi(path: &str) -> Result<ethers::abi::Abi, Box<dyn Error>> {
-    let abi_path = std::env::current_dir().unwrap().join(path).canonicalize()?;
+    let abi_path = std::env::current_dir()?.join(path).canonicalize()?;
     let f = File::open(abi_path)?;
     let abi = ethers::abi::Abi::load(f)?;
 
     Ok(abi)
 }
 
-///
+/// parses gas results from an [ExecutionTrace]
 pub fn parse_gas(exec_trace: &ExecutionTrace) -> u64 {
     let mut depth = -1; // start at -1 because we have the on chain message gas and then the call to our solidity contract
     let mut gas_usage = Gas::new(0);
@@ -369,6 +430,11 @@ mod executortests {
             hex::encode(call.result.msg_receipt.return_data.bytes()),
             "58200000000000000000000000000000000000000000000000000000000000000064"
         );
+        assert_eq!(
+            fvm_ipld_encoding::from_slice::<Vec<u8>>(call.result.msg_receipt.return_data.bytes())
+                .unwrap(),
+            100_u32.to_be_bytes()
+        );
 
         println!(
             "{}",
@@ -390,6 +456,14 @@ mod executortests {
 
         assert_eq!(call.result.msg_receipt.exit_code.value(), 0);
         assert_eq!(hex::encode(call.result.msg_receipt.return_data.bytes()), "584000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000");
+        // filecoin addresses are returned as tuple types (see solidity)
+        assert_eq!(
+            fvm_ipld_encoding::from_slice::<Vec<Vec<u8>>>(
+                call.result.msg_receipt.return_data.bytes()
+            )
+            .unwrap(),
+            vec![0_u32.to_be_bytes()]
+        );
 
         println!("Calling `lookup_delegated_address (address found)`");
 
@@ -402,6 +476,14 @@ mod executortests {
 
         assert_eq!(call.result.msg_receipt.exit_code.value(), 0);
         assert_eq!(hex::encode(call.result.msg_receipt.return_data.bytes()), "586000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000016040adafea492d9c6733ae3d56b7ed1adb60692c98bc500000000000000000000");
+        // filecoin addresses are returned as tuple types (see solidity)
+        assert_eq!(
+            fvm_ipld_encoding::from_slice::<Vec<Vec<u8>>>(
+                call.result.msg_receipt.return_data.bytes()
+            )
+            .unwrap(),
+            vec![hex::decode("040adafea492d9c6733ae3d56b7ed1adb60692c98bc5").unwrap()]
+        );
 
         println!("Calling `resolve_eth_address`");
 
@@ -418,9 +500,54 @@ mod executortests {
             hex::encode(call.result.msg_receipt.return_data.bytes()),
             "58200000000000000000000000000000000000000000000000000000000000000190"
         );
+        assert_eq!(
+            fvm_ipld_encoding::from_slice::<Vec<u8>>(call.result.msg_receipt.return_data.bytes())
+                .unwrap(),
+            400_u32.to_be_bytes()
+        );
 
         let table = contract.create_gas_table();
 
         table.print_tty(true).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod sendtests {
+
+    // this file was kindly compiled
+    const WASM_COMPILED_PATH: &str = "./test_files/PrecompilesApiTest.bin";
+    const ABI_PATH: &str = "./test_files/PrecompilesApiTest.json";
+
+    use super::*;
+
+    #[test]
+    fn precompiles_tests() {
+        println!("Testing sending funds");
+
+        let mut test_executor = TestExecutor::new().unwrap();
+
+        let contract =
+            Contract::deploy(&mut test_executor, 0, WASM_COMPILED_PATH, ABI_PATH).unwrap();
+
+        let actor_id = test_executor.accounts[0].0;
+
+        let balance = test_executor.get_balance(actor_id).unwrap();
+        assert_eq!(balance, TokenAmount::from_atto(10000));
+
+        let send_res = test_executor
+            .send_funds(
+                test_executor.accounts[0],
+                contract.address,
+                TokenAmount::from_atto(10000),
+            )
+            .unwrap();
+        assert_eq!(send_res.msg_receipt.exit_code.value(), 0);
+
+        let balance = test_executor.get_balance(actor_id).unwrap();
+        assert_eq!(balance, TokenAmount::from_atto(0));
+
+        let balance = test_executor.get_balance(contract.id).unwrap();
+        assert_eq!(balance, TokenAmount::from_atto(10000))
     }
 }

@@ -12,9 +12,38 @@
 > Repo for fEVM related utility functions in rust
 
 
+
+## Getting started
+
+### building the project 🔨
+Note that the library requires a nightly version of the rust toolchain. You can change the default toolchain by running:
+
+```bash
+rustup override set nightly
+```
+
+After which you may build the library
+
+```bash
+cargo build --release
+```
+
+Update the builtin-actors submodule and then build the mainnet bundle of actors:
+
+```bash
+
+make build-actors
+
+```
+
+You will need a functioning installation of `solc` in order to leverage some of the local-execution functionality.
+[solc-select](https://github.com/crytic/solc-select) is recommended.
+Follow the instructions on [solc-select](https://github.com/crytic/solc-select) to activate `solc` in your environment.
+
+
 ## Tests
 
-All tests are written as docstrings. 
+All non-executor tests are written as docstrings. 
 To run them: 
 
 ```bash
@@ -22,6 +51,15 @@ To run them:
 cargo test --doc
 
 ```
+
+FVM-executor unit tests can be run with: 
+
+```bash
+
+cargo test
+
+```
+
 
 ## Docs
 
@@ -103,7 +141,7 @@ RUST_LOG=debug cargo run
 ### Local executor 
 
 
-To test out the local fEVM executor create the following contract as `contracts/HelloWorld.sol`:  
+To test out the local fEVM executor functionality create the following contract as `contracts/HelloWorld.sol`:  
 ```solidity
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
