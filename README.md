@@ -103,6 +103,7 @@ RUST_LOG=debug cargo run
 ### Local executor 
 
 
+To test out the local fEVM executor create the following contract as `contracts/HelloWorld.sol`:  
 ```solidity
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
@@ -112,7 +113,6 @@ contract HelloWorld {
         return "Hello World";
     }
 }
-
 ```
 
 Now run: 
@@ -123,6 +123,29 @@ solc contracts/HelloWorld.sol --output-dir ./build/tests --overwrite --bin --has
 
 ```
 
-The generated `.bin` file is the one we're interested in for the fEVM. 
+The generated `.bin`and `.abi` files are the ones we're interested in for testing local execution. 
+To test the contract locally: 
 
+```rust 
+
+const WASM_COMPILED_PATH: &str = "./build/tests/HelloWorld.bin";
+const ABI_PATH: &str = "./build/tests/HelloWorld.abi";
+
+use fevm_utils::executor::{Contract, TestExecutor};
+
+
+pub fn main() {
+     // create a local executor
+     let mut test_executor = TestExecutor::new().unwrap();
+
+    // deploy hellow world using test address 0
+     let mut contract =
+            Contract::deploy(&mut test_executor, 0, WASM_COMPILED_PATH, ABI_PATH).unwrap();
+    
+    // call helloworld using test address 0
+     contract.call_fn(&mut test_executor, 0, "sayHelloWorld", &[]).unwrap();
+
+}
+
+```
 
