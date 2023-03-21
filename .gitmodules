@@ -1,0 +1,3 @@
+[submodule "builtin-actors"]
+	path = builtin-actors
+	url = https://github.com/filecoin-project/builtin-actors

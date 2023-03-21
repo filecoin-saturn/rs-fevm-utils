@@ -12,9 +12,38 @@
 > Repo for fEVM related utility functions in rust
 
 
+
+## Getting started
+
+### building the project 🔨
+Note that the library requires a nightly version of the rust toolchain. You can change the default toolchain by running:
+
+```bash
+rustup override set nightly
+```
+
+After which you may build the library
+
+```bash
+cargo build --release
+```
+
+Update the builtin-actors submodule and then build the mainnet bundle of actors:
+
+```bash
+
+make build-actors
+
+```
+
+You will need a functioning installation of `solc` in order to leverage some of the local-execution functionality.
+[solc-select](https://github.com/crytic/solc-select) is recommended.
+Follow the instructions on [solc-select](https://github.com/crytic/solc-select) to activate `solc` in your environment.
+
+
 ## Tests
 
-All tests are written as docstrings. 
+All non-executor tests are written as docstrings. 
 To run them: 
 
 ```bash
@@ -22,6 +51,15 @@ To run them:
 cargo test --doc
 
 ```
+
+FVM-executor unit tests can be run with: 
+
+```bash
+
+cargo test
+
+```
+
 
 ## Docs
 
@@ -96,6 +134,56 @@ To run this script in full run:
 ```rust
 
 RUST_LOG=debug cargo run 
+
+```
+
+
+### Local executor 
+
+
+To test out the local fEVM executor functionality create the following contract as `contracts/HelloWorld.sol`:  
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.19;
+
+contract HelloWorld {
+    function sayHelloWorld() public pure returns (string memory) {
+        return "Hello World";
+    }
+}
+```
+
+Now run: 
+
+```bash
+
+solc contracts/HelloWorld.sol --output-dir ./build/tests --overwrite --bin --hashes --opcodes --abi
+
+```
+
+The generated `.bin`and `.abi` files are the ones we're interested in for testing local execution. 
+To test the contract locally: 
+
+```rust 
+
+const WASM_COMPILED_PATH: &str = "./build/tests/HelloWorld.bin";
+const ABI_PATH: &str = "./build/tests/HelloWorld.abi";
+
+use fevm_utils::executor::{Contract, TestExecutor};
+
+
+pub fn main() {
+     // create a local executor
+     let mut test_executor = TestExecutor::new().unwrap();
+
+    // deploy hellow world using test address 0
+     let mut contract =
+            Contract::deploy(&mut test_executor, 0, WASM_COMPILED_PATH, ABI_PATH).unwrap();
+    
+    // call helloworld using test address 0
+     contract.call_fn(&mut test_executor, 0, "sayHelloWorld", &[]).unwrap();
+
+}
 
 ```
 

@@ -1,0 +1,71 @@
+[
+    {
+        "inputs": [],
+        "name": "FailToCallActor",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint64",
+                "name": "actor_id",
+                "type": "uint64"
+            }
+        ],
+        "name": "lookup_delegated_address",
+        "outputs": [
+            {
+                "internalType": "bytes",
+                "name": "",
+                "type": "bytes"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "bytes",
+                        "name": "data",
+                        "type": "bytes"
+                    }
+                ],
+                "internalType": "struct CommonTypes.FilAddress",
+                "name": "addr",
+                "type": "tuple"
+            }
+        ],
+        "name": "resolve_address",
+        "outputs": [
+            {
+                "internalType": "uint64",
+                "name": "",
+                "type": "uint64"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "addr",
+                "type": "address"
+            }
+        ],
+        "name": "resolve_eth_address",
+        "outputs": [
+            {
+                "internalType": "uint64",
+                "name": "",
+                "type": "uint64"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
+]
