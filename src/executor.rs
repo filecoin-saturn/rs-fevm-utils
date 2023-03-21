@@ -196,6 +196,12 @@ impl Contract {
         params.extend(num_bytes);
         params.extend(call_bytes);
 
+        trace!(
+            "{} call params:  {}",
+            method_name,
+            hex::encode(params.clone())
+        );
+
         let params = RawBytes::new(params);
 
         let sender = test_executor.sender[sender_idx];
@@ -331,7 +337,10 @@ mod executortests {
 
     use std::str::FromStr;
 
-    use ethers::abi::{Address, Token};
+    use ethers::{
+        abi::{Address, Token},
+        types::U256,
+    };
 
     use super::*;
 
@@ -344,72 +353,55 @@ mod executortests {
         let mut contract =
             Contract::deploy(&mut test_executor, 0, WASM_COMPILED_PATH, ABI_PATH).unwrap();
 
-        // println!("Calling `resolve_address`");
-        // let params = RawBytes::new(hex::decode("58841D5F67A4000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000015011EDA43D05CA6D7D637E7065EF6B8C5DB89E5FB0C0000000000000000000000").unwrap());
+        println!("Calling `resolve_address`");
+        // type 1 address encoded as bytes
+        let tokens = &[Token::Tuple(vec![Token::Bytes(
+            hex::decode("011EDA43D05CA6D7D637E7065EF6B8C5DB89E5FB0C").unwrap(),
+        )])];
 
-        // contract
-        //     .call_fn(&mut test_executor, 0, "resolve_address")
-        //     .unwrap();
-        // let call = contract.last_call();
+        contract
+            .call_fn(&mut test_executor, 0, "resolve_address", tokens)
+            .unwrap();
+        let call = contract.last_call();
 
-        // assert_eq!(call.result.msg_receipt.exit_code.value(), 0);
-        // assert_eq!(
-        //     hex::encode(call.result.msg_receipt.return_data.bytes()),
-        //     "58200000000000000000000000000000000000000000000000000000000000000064"
-        // );
+        assert_eq!(call.result.msg_receipt.exit_code.value(), 0);
+        assert_eq!(
+            hex::encode(call.result.msg_receipt.return_data.bytes()),
+            "58200000000000000000000000000000000000000000000000000000000000000064"
+        );
 
-        // println!(
-        //     "{}",
-        //     call.result
-        //         .msg_receipt
-        //         .return_data
-        //         .deserialize::<String>()
-        //         .unwrap()
-        // );
+        println!(
+            "{}",
+            call.result
+                .msg_receipt
+                .return_data
+                .deserialize::<String>()
+                .unwrap()
+        );
 
-        // println!("Calling `lookup_delegated_address (empty response)`");
+        println!("Calling `lookup_delegated_address (empty response)`");
 
-        // let params = RawBytes::new(
-        //     hex::decode(
-        //         "58249898B39A0000000000000000000000000000000000000000000000000000000000000064",
-        //     )
-        //     .unwrap(),
-        // );
+        let tokens = &[Token::Uint(U256::from(100))];
 
-        // contract
-        //     .call_fn(
-        //         &mut test_executor,
-        //         0,
-        //         params,
-        //         "lookup_delegated_address (empty response)",
-        //     )
-        //     .unwrap();
-        // let call = contract.last_call();
+        contract
+            .call_fn(&mut test_executor, 0, "lookup_delegated_address", tokens)
+            .unwrap();
+        let call = contract.last_call();
 
-        // assert_eq!(call.result.msg_receipt.exit_code.value(), 0);
-        // assert_eq!(hex::encode(call.result.msg_receipt.return_data.bytes()), "584000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000");
+        assert_eq!(call.result.msg_receipt.exit_code.value(), 0);
+        assert_eq!(hex::encode(call.result.msg_receipt.return_data.bytes()), "584000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000");
 
-        // println!("Calling `lookup_delegated_address (address found)`");
+        println!("Calling `lookup_delegated_address (address found)`");
 
-        // let params = RawBytes::new(
-        //     hex::decode(
-        //         "58249898B39A0000000000000000000000000000000000000000000000000000000000000190",
-        //     )
-        //     .unwrap(),
-        // );
+        let tokens = &[Token::Uint(U256::from(400))];
 
-        // contract
-        //     .call_fn(
-        //         &mut test_executor,
-        //         0,
-        //         params,
-        //         "lookup_delegated_address (address found)",
-        //     )
-        //     .unwrap();
-        // let call = contract.last_call();
+        contract
+            .call_fn(&mut test_executor, 0, "lookup_delegated_address", tokens)
+            .unwrap();
+        let call = contract.last_call();
 
-        // assert_eq!(call.result.msg_receipt.exit_code.value(), 0);
-        // assert_eq!(hex::encode(call.result.msg_receipt.return_data.bytes()), "586000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000016040adafea492d9c6733ae3d56b7ed1adb60692c98bc500000000000000000000");
+        assert_eq!(call.result.msg_receipt.exit_code.value(), 0);
+        assert_eq!(hex::encode(call.result.msg_receipt.return_data.bytes()), "586000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000016040adafea492d9c6733ae3d56b7ed1adb60692c98bc500000000000000000000");
 
         println!("Calling `resolve_eth_address`");
 
