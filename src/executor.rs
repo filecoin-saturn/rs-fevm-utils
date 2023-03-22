@@ -118,17 +118,16 @@ impl TestExecutor {
     /// Sends funds from an account to an address
     pub fn send_funds(
         &mut self,
-        from: Account,
         to: Address,
         value: TokenAmount,
     ) -> Result<ApplyRet, Box<dyn Error>> {
         let sequence = self
             .sequence
-            .get_mut(&from)
+            .get_mut(&self.accounts[self.sender])
             .ok_or_else(|| ExecutorError::UninitializedSequence)?;
 
         let message = Message {
-            from: from.1,
+            from: self.accounts[self.sender].1,
             to,
             gas_limit: 1000000000,
             value,
@@ -556,12 +555,9 @@ mod sendtests {
         let balance = test_executor.get_balance(actor_id).unwrap();
         assert_eq!(balance, TokenAmount::from_atto(10000));
 
+        // send from the currently active account i.e `sender` on the TestExecutor
         let send_res = test_executor
-            .send_funds(
-                test_executor.accounts[0],
-                contract.address,
-                TokenAmount::from_atto(10000),
-            )
+            .send_funds(contract.address, TokenAmount::from_atto(10000))
             .unwrap();
         assert_eq!(send_res.msg_receipt.exit_code.value(), 0);
 
