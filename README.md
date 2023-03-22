@@ -168,21 +168,25 @@ To test the contract locally:
 
 const WASM_COMPILED_PATH: &str = "./build/tests/HelloWorld.bin";
 const ABI_PATH: &str = "./build/tests/HelloWorld.abi";
+use fevm_utils::executor::TestExecutor;
 
-use fevm_utils::executor::{Contract, TestExecutor};
-
-
+#[test]
 pub fn main() {
-     // create a local executor
-     let mut test_executor = TestExecutor::new().unwrap();
+    // create a local executor
+    let mut test_executor = TestExecutor::new().unwrap();
 
     // deploy hellow world using test address 0
-     let mut contract =
-            Contract::deploy(&mut test_executor, 0, WASM_COMPILED_PATH, ABI_PATH).unwrap();
-    
-    // call helloworld using test address 0
-     contract.call_fn(&mut test_executor, 0, "sayHelloWorld", &[]).unwrap();
+    let mut contract = test_executor.deploy(WASM_COMPILED_PATH, ABI_PATH).unwrap();
 
+    // call helloworld using test address 0
+    test_executor
+        .call_fn(&mut contract, "sayHelloWorld", &[])
+        .unwrap();
+
+    // print gas usage
+    let table = contract.create_gas_table();
+
+    table.print_tty(true).unwrap();
 }
 
 ```

@@ -1,5 +1,5 @@
 use cid::Cid;
-use ethers::abi::Token;
+use ethers::abi::{decode, ParamType, Token};
 use fil_actor_eam::Return;
 use fil_actor_evm::Method as EvmMethods;
 use fil_actors_runtime::EAM_ACTOR_ADDR;
@@ -58,6 +58,7 @@ pub struct TestExecutor {
     tester: Tester<MemoryBlockstore, DummyExterns>,
     accounts: [Account; 300],
     sequence: HashMap<Account, u64>,
+    sender: usize,
 }
 
 impl TestExecutor {
@@ -90,6 +91,8 @@ impl TestExecutor {
             tester,
             accounts,
             sequence,
+            // default account to make calls from
+            sender: 0,
         })
     }
 
@@ -105,6 +108,11 @@ impl TestExecutor {
             .map_err(|_| ExecutorError::UninitializedState)?
             .ok_or_else(|| ExecutorError::UninitializedState)?
             .balance)
+    }
+
+    /// Updates the currently active account to make calls with
+    pub fn update_active_account(&mut self, idx: usize) {
+        self.sender = idx
     }
 
     /// Sends funds from an account to an address
@@ -139,48 +147,13 @@ impl TestExecutor {
 
         Ok(res)
     }
-}
 
-impl Debug for TestExecutor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TestExecutor")
-            .field("executor", &"DefaultExecutor")
-            .field("constructor_params", &"ExternalParams")
-            .field("sender", &self.accounts[0])
-            .finish()
-    }
-}
-
-///
-#[derive(Debug, Clone)]
-#[allow(unused)]
-pub struct CallResult {
-    /// result from call
-    pub result: ApplyRet,
-    /// tuple of ("label", gas_consumed)
-    pub gas_used: (String, u64),
-}
-
-/// Contract type
-#[derive(Debug)]
-#[allow(unused)]
-pub struct Contract {
-    /// contract actor id
-    pub id: u64,
-    /// contract address
-    pub address: Address,
-    calls: Vec<CallResult>,
-    abi: ethers::abi::Abi,
-}
-
-impl Contract {
     /// deploys a new contract using a instantiated test executor, an account to pay for gas, and paths to solc generated `.bin` and `.abi` files for a solidity contract.
     pub fn deploy(
-        test_executor: &mut TestExecutor,
-        sender_idx: usize,
+        &mut self,
         wasm_compiled_path: &str,
         abi_path: &str,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Contract, Box<dyn Error>> {
         // First we deploy the contract in order to actually have an actor running on the embryo address
         info!("Calling init actor (EVM)");
 
@@ -188,8 +161,8 @@ impl Contract {
 
         let constructor_params = CreateExternalParams(evm_bin);
 
-        let sender = test_executor.accounts[sender_idx];
-        let sequence = test_executor
+        let sender = self.accounts[self.sender];
+        let sequence = self
             .sequence
             .get_mut(&sender)
             .ok_or_else(|| ExecutorError::UninitializedSequence)?;
@@ -206,7 +179,7 @@ impl Contract {
 
         *sequence = *sequence + 1;
 
-        let res = test_executor
+        let res = self
             .tester
             .executor
             .as_mut()
@@ -236,7 +209,7 @@ impl Contract {
 
         let gas_used = parse_gas(&res.exec_trace);
 
-        Ok(Self {
+        Ok(Contract {
             id: contract_actor_id,
             calls: vec![CallResult {
                 result: res,
@@ -250,14 +223,13 @@ impl Contract {
     /// Calls a function on a deployed contract using a instantiated test executor, an account to pay for gas, a method name to call and a list of tokens / parameters to call.
     pub fn call_fn(
         &mut self,
-        test_executor: &mut TestExecutor,
-        sender_idx: usize,
+        contract: &mut Contract,
         method_name: &str,
         tokens: &[Token],
     ) -> Result<(), Box<dyn Error>> {
         let mut params = hex::decode(PARAMS_CBOR_HEADER)?;
 
-        let abi_func = self.abi.function(method_name)?;
+        let abi_func = contract.abi.function(method_name)?;
 
         let call_bytes: Vec<u8> = abi_func.encode_input(tokens)?;
         let num_bytes = call_bytes.len().to_be_bytes();
@@ -273,14 +245,14 @@ impl Contract {
 
         let params = RawBytes::new(params);
 
-        let sender = test_executor.accounts[sender_idx];
-        let sequence = test_executor
+        let sender = self.accounts[self.sender];
+        let sequence = self
             .sequence
             .get_mut(&sender)
             .ok_or_else(|| ExecutorError::UninitializedSequence)?;
         let message = Message {
             from: sender.1,
-            to: Address::new_id(self.id),
+            to: Address::new_id(contract.id),
             gas_limit: 1000000000,
             method_num: EvmMethods::InvokeContract as u64,
             sequence: sequence.clone(),
@@ -290,7 +262,7 @@ impl Contract {
 
         *sequence = *sequence + 1;
 
-        let res = test_executor
+        let res = self
             .tester
             .executor
             .as_mut()
@@ -298,13 +270,72 @@ impl Contract {
             .execute_message(message, ApplyKind::Explicit, 100)?;
         let gas_used = parse_gas(&res.exec_trace);
 
-        self.calls.push(CallResult {
+        contract.calls.push(CallResult {
             result: res.clone(),
             gas_used: (method_name.into(), gas_used),
         });
         Ok(())
     }
+}
 
+impl Debug for TestExecutor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TestExecutor")
+            .field("executor", &"DefaultExecutor")
+            .field("constructor_params", &"ExternalParams")
+            .field("sender", &self.accounts[0])
+            .finish()
+    }
+}
+
+///
+#[derive(Debug, Clone)]
+#[allow(unused)]
+pub struct CallResult {
+    /// result from call
+    pub result: ApplyRet,
+    /// tuple of ("label", gas_consumed)
+    pub gas_used: (String, u64),
+}
+
+impl CallResult {
+    /// decode a cbor encoded receipt
+    pub fn decode_return_data(&self, types: &[ParamType]) -> Result<Vec<Token>, Box<dyn Error>> {
+        let data = serde_cbor::from_slice::<&[u8]>(&self.result.msg_receipt.return_data)?;
+        Ok(decode(types, data)?)
+    }
+}
+
+/// Represents a Filecoin address
+#[derive(Debug)]
+pub struct FilAddress {
+    data: Vec<u8>,
+}
+
+impl FilAddress {
+    /// converts to eth token
+    pub fn to_eth_token(&self) -> Token {
+        Token::Tuple(vec![Token::Bytes(self.data.clone())])
+    }
+    /// returns eth param type
+    pub fn param_type(&self) -> ParamType {
+        ParamType::Tuple(vec![ParamType::Bytes])
+    }
+}
+
+/// Contract type
+#[derive(Debug)]
+#[allow(unused)]
+pub struct Contract {
+    /// contract actor id
+    pub id: u64,
+    /// contract address
+    pub address: Address,
+    calls: Vec<CallResult>,
+    abi: ethers::abi::Abi,
+}
+
+impl Contract {
     /// gets the last call made to a contract
     pub fn last_call(&self) -> CallResult {
         self.calls[self.calls.len() - 1].clone()
@@ -316,8 +347,8 @@ impl Contract {
         table.add_row(row!["Function", "Gas"]);
         self.calls.iter().for_each(
             |CallResult {
-                 result: _,
                  gas_used: (description, gas),
+                 ..
              }| {
                 table.add_row(row![description, gas]);
             },
@@ -399,7 +430,7 @@ mod executortests {
     use std::str::FromStr;
 
     use ethers::{
-        abi::{Address, Token},
+        abi::{Address, ParamType, Token},
         types::U256,
     };
 
@@ -411,17 +442,18 @@ mod executortests {
 
         let mut test_executor = TestExecutor::new().unwrap();
 
-        let mut contract =
-            Contract::deploy(&mut test_executor, 0, WASM_COMPILED_PATH, ABI_PATH).unwrap();
+        let mut contract = test_executor.deploy(WASM_COMPILED_PATH, ABI_PATH).unwrap();
 
         println!("Calling `resolve_address`");
         // type 1 address encoded as bytes
-        let tokens = &[Token::Tuple(vec![Token::Bytes(
-            hex::decode("011EDA43D05CA6D7D637E7065EF6B8C5DB89E5FB0C").unwrap(),
-        )])];
 
-        contract
-            .call_fn(&mut test_executor, 0, "resolve_address", tokens)
+        let token = FilAddress {
+            data: hex::decode("011EDA43D05CA6D7D637E7065EF6B8C5DB89E5FB0C").unwrap(),
+        }
+        .to_eth_token();
+
+        test_executor
+            .call_fn(&mut contract, "resolve_address", &vec![token])
             .unwrap();
         let call = contract.last_call();
 
@@ -430,59 +462,46 @@ mod executortests {
             hex::encode(call.result.msg_receipt.return_data.bytes()),
             "58200000000000000000000000000000000000000000000000000000000000000064"
         );
-        assert_eq!(
-            fvm_ipld_encoding::from_slice::<Vec<u8>>(call.result.msg_receipt.return_data.bytes())
-                .unwrap(),
-            100_u32.to_be_bytes()
-        );
 
-        println!(
-            "{}",
-            call.result
-                .msg_receipt
-                .return_data
-                .deserialize::<String>()
-                .unwrap()
+        // we know from the abi that it returns an int so we decode accordingly
+        assert_eq!(
+            call.decode_return_data(&vec![ParamType::Uint(256)])
+                .unwrap()[0]
+                .clone(),
+            Token::Uint(U256::from(100))
         );
 
         println!("Calling `lookup_delegated_address (empty response)`");
 
         let tokens = &[Token::Uint(U256::from(100))];
 
-        contract
-            .call_fn(&mut test_executor, 0, "lookup_delegated_address", tokens)
+        test_executor
+            .call_fn(&mut contract, "lookup_delegated_address", tokens)
             .unwrap();
         let call = contract.last_call();
 
         assert_eq!(call.result.msg_receipt.exit_code.value(), 0);
         assert_eq!(hex::encode(call.result.msg_receipt.return_data.bytes()), "584000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000");
-        // filecoin addresses are returned as tuple types (see solidity)
         assert_eq!(
-            fvm_ipld_encoding::from_slice::<Vec<Vec<u8>>>(
-                call.result.msg_receipt.return_data.bytes()
-            )
-            .unwrap(),
-            vec![0_u32.to_be_bytes()]
+            call.decode_return_data(&vec![ParamType::Bytes]).unwrap()[0].clone(),
+            Token::Bytes(vec![])
         );
 
         println!("Calling `lookup_delegated_address (address found)`");
 
         let tokens = &[Token::Uint(U256::from(400))];
 
-        contract
-            .call_fn(&mut test_executor, 0, "lookup_delegated_address", tokens)
+        test_executor
+            .call_fn(&mut contract, "lookup_delegated_address", tokens)
             .unwrap();
         let call = contract.last_call();
 
         assert_eq!(call.result.msg_receipt.exit_code.value(), 0);
         assert_eq!(hex::encode(call.result.msg_receipt.return_data.bytes()), "586000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000016040adafea492d9c6733ae3d56b7ed1adb60692c98bc500000000000000000000");
-        // filecoin addresses are returned as tuple types (see solidity)
+        // we decode the f4 address bytes
         assert_eq!(
-            fvm_ipld_encoding::from_slice::<Vec<Vec<u8>>>(
-                call.result.msg_receipt.return_data.bytes()
-            )
-            .unwrap(),
-            vec![hex::decode("040adafea492d9c6733ae3d56b7ed1adb60692c98bc5").unwrap()]
+            call.decode_return_data(&vec![ParamType::Bytes]).unwrap()[0].clone(),
+            Token::Bytes(hex::decode("040adafea492d9c6733ae3d56b7ed1adb60692c98bc5").unwrap(),)
         );
 
         println!("Calling `resolve_eth_address`");
@@ -491,8 +510,8 @@ mod executortests {
             Address::from_str("0xDAFEA492D9C6733AE3D56B7ED1ADB60692C98BC5").unwrap(),
         )];
 
-        contract
-            .call_fn(&mut test_executor, 0, "resolve_eth_address", tokens)
+        test_executor
+            .call_fn(&mut contract, "resolve_eth_address", tokens)
             .unwrap();
         let call = contract.last_call();
         assert_eq!(call.result.msg_receipt.exit_code.value(), 0);
@@ -500,10 +519,13 @@ mod executortests {
             hex::encode(call.result.msg_receipt.return_data.bytes()),
             "58200000000000000000000000000000000000000000000000000000000000000190"
         );
+
+        // we know from the abi that it returns an int so we decode accordingly
         assert_eq!(
-            fvm_ipld_encoding::from_slice::<Vec<u8>>(call.result.msg_receipt.return_data.bytes())
-                .unwrap(),
-            400_u32.to_be_bytes()
+            call.decode_return_data(&vec![ParamType::Uint(256)])
+                .unwrap()[0]
+                .clone(),
+            Token::Uint(U256::from(400))
         );
 
         let table = contract.create_gas_table();
@@ -527,8 +549,7 @@ mod sendtests {
 
         let mut test_executor = TestExecutor::new().unwrap();
 
-        let contract =
-            Contract::deploy(&mut test_executor, 0, WASM_COMPILED_PATH, ABI_PATH).unwrap();
+        let contract = test_executor.deploy(WASM_COMPILED_PATH, ABI_PATH).unwrap();
 
         let actor_id = test_executor.accounts[0].0;
 
