@@ -1,4 +1,5 @@
 use cid::Cid;
+use ethers::abi::encode;
 use ethers::abi::{decode, ParamType, Token};
 use fil_actor_eam::Return;
 use fil_actor_evm::Method as EvmMethods;
@@ -152,7 +153,7 @@ impl TestExecutor {
         &mut self,
         wasm_compiled_path: &str,
         abi_path: &str,
-        constructor_args: Option<Vec<Vec<u8>>>,
+        constructor_args: Option<&[Token]>,
     ) -> Result<Contract, Box<dyn Error>> {
         // First we deploy the contract in order to actually have an actor running on the embryo address
         info!("Calling init actor (EVM)");
@@ -161,11 +162,7 @@ impl TestExecutor {
 
         match constructor_args {
             None => (),
-            Some(constructor_args) => {
-                for mut arg in constructor_args {
-                    evm_bin.append(&mut arg);
-                }
-            }
+            Some(constructor_args) => evm_bin.append(&mut encode(constructor_args)),
         }
 
         let constructor_params = CreateExternalParams(evm_bin);
