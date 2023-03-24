@@ -361,8 +361,8 @@ impl Contract {
 pub fn setup_tester() -> Result<(Tester<MemoryBlockstore, DummyExterns>, Manifest), Box<dyn Error>>
 {
     let bs = MemoryBlockstore::default();
-    let actors = std::fs::read("./builtin-actors/output/builtin-actors-mainnet.car")?;
-    let bundle_root = bundle::import_bundle(&bs, &actors)?;
+    let actors = include_bytes!("../builtin-actors/output/builtin-actors-mainnet.car");
+    let bundle_root = bundle::import_bundle(&bs, &actors[..])?;
 
     let (manifest_version, manifest_data_cid): (u32, Cid) = match bs.get_cbor(&bundle_root)? {
         Some(b) => b,
