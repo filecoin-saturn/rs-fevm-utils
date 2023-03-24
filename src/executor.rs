@@ -19,7 +19,7 @@ use fvm_shared::econ::TokenAmount;
 use fvm_shared::message::Message;
 use fvm_shared::state::StateTreeVersion;
 use fvm_shared::version::NetworkVersion;
-use log::{info, trace};
+use log::{info, trace, warn};
 use prettytable::{row, Table};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use std::collections::HashMap;
@@ -361,7 +361,24 @@ impl Contract {
 pub fn setup_tester() -> Result<(Tester<MemoryBlockstore, DummyExterns>, Manifest), Box<dyn Error>>
 {
     let bs = MemoryBlockstore::default();
-    let actors = std::fs::read("./builtin-actors/output/builtin-actors-mainnet.car")?;
+    let actors_path = match std::env::current_exe() {
+        Ok(exe_path) => {
+            let parent = match exe_path.parent() {
+                Some(p) => p.display().to_string(),
+                None => "./".to_string(),
+            };
+            let bundle_path = format!("{}/builtin-actors-mainnet.car", parent);
+            info!("loading mainnet bundle from {}", bundle_path);
+            bundle_path
+        }
+        Err(e) => {
+            warn!("failed to get current exe path: {e}");
+            let bundle_path = format!("./builtin-actors/output/builtin-actors-mainnet.car");
+            info!("loading mainnet bundle from {}", bundle_path);
+            bundle_path
+        }
+    };
+    let actors = std::fs::read(actors_path)?;
     let bundle_root = bundle::import_bundle(&bs, &actors)?;
 
     let (manifest_version, manifest_data_cid): (u32, Cid) = match bs.get_cbor(&bundle_root)? {
