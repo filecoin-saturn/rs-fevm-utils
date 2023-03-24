@@ -2,6 +2,7 @@
 name = "fevm-utils"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [dependencies]
 thiserror = "1.0.38"
@@ -35,4 +36,7 @@ fvm_shared = { version = "3.0.0-alpha.17" }
 fvm = { version = "3.0.0-alpha.21" }
 fvm_ipld_encoding = { version = "0.3.3" }
 fvm_integration_tests = { version = "3.0.0-alpha.1" }
-copy_to_output = "2.0.1"
+
+[build-dependencies]
+copy_to_output = "2.0.0"
+glob = "0.3"
