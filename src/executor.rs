@@ -51,6 +51,8 @@ pub enum ExecutorError {
     UninitializedSequence,
     #[error("unnable to load actors")]
     BadActors,
+    #[error("incorrectly formatted params")]
+    BadParams,
 }
 
 ///
@@ -257,7 +259,9 @@ impl TestExecutor {
         params.extend(call_bytes);
 
         // assert its well formatted cbor
-        assert!(serde_cbor::from_slice::<&[u8]>(&params).is_ok());
+        if !(serde_cbor::from_slice::<&[u8]>(&params).is_ok()) {
+            return Err(ExecutorError::BadParams.into());
+        }
 
         debug!(
             "{} call params:  {}",
