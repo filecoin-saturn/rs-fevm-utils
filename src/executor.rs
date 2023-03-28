@@ -258,16 +258,16 @@ impl TestExecutor {
         params.extend(num_bytes);
         params.extend(call_bytes);
 
-        // assert its well formatted cbor
-        if !(serde_cbor::from_slice::<&[u8]>(&params).is_ok()) {
-            return Err(ExecutorError::BadParams.into());
-        }
-
-        debug!(
+        info!(
             "{} call params:  {}",
             method_name,
             hex::encode(params.clone())
         );
+
+        // assert its well formatted cbor
+        if !(serde_cbor::from_slice::<&[u8]>(&params).is_ok()) {
+            return Err(ExecutorError::BadParams.into());
+        }
 
         let params = RawBytes::new(params);
 
