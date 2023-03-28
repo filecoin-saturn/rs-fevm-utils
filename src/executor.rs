@@ -36,7 +36,7 @@ pub struct CreateExternalParams(#[serde(with = "strict_bytes")] pub Vec<u8>);
 ///
 pub type GasResult = Vec<(String, u64)>;
 
-///
+/// calldata is encoding as a byte array of variable length with length encoded by (1, 2, 4, 8 bytes)
 const PARAMS_CBOR_HEADER: [&str; 4] = ["58", "59", "5a", "5b"];
 
 #[derive(thiserror::Error, Debug)]
