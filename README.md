@@ -176,7 +176,7 @@ pub fn main() {
     let mut test_executor = TestExecutor::new().unwrap();
 
     // deploy hellow world using test address 0
-    let mut contract = test_executor.deploy(WASM_COMPILED_PATH, ABI_PATH).unwrap();
+    let mut contract = test_executor.deploy(WASM_COMPILED_PATH, ABI_PATH, None).unwrap();
 
     // call helloworld using test address 0
     test_executor
