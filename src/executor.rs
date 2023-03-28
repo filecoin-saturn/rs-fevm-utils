@@ -328,7 +328,7 @@ impl CallResult {
 /// Represents a Filecoin address
 #[derive(Debug)]
 pub struct FilAddress {
-    pub data: Vec<u8>,
+    data: Vec<u8>,
 }
 
 impl FilAddress {
