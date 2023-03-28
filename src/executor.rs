@@ -20,7 +20,7 @@ use fvm_shared::econ::TokenAmount;
 use fvm_shared::message::Message;
 use fvm_shared::state::StateTreeVersion;
 use fvm_shared::version::NetworkVersion;
-use log::{debug, info};
+use log::{error, info};
 use prettytable::{row, Table};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use std::collections::HashMap;
@@ -37,7 +37,7 @@ pub struct CreateExternalParams(#[serde(with = "strict_bytes")] pub Vec<u8>);
 pub type GasResult = Vec<(String, u64)>;
 
 ///
-const PARAMS_CBOR_HEADER: &str = "58";
+const PARAMS_CBOR_HEADER: [&str; 4] = ["58", "59", "5a", "5b"];
 
 #[derive(thiserror::Error, Debug)]
 /// Errors related to address parsing
@@ -248,13 +248,17 @@ impl TestExecutor {
         method_name: &str,
         tokens: &[Token],
     ) -> Result<(), Box<dyn Error>> {
-        let mut params = hex::decode(PARAMS_CBOR_HEADER)?;
-
         let abi_func = contract.abi.function(method_name)?;
 
         let call_bytes: Vec<u8> = abi_func.encode_input(tokens)?;
+
         let num_bytes = call_bytes.len().to_be_bytes();
-        let num_bytes = num_bytes.iter().filter(|x| **x != 0);
+        let num_bytes = num_bytes
+            .iter()
+            .filter(|x| **x != 0)
+            .map(|x| x.clone())
+            .collect::<Vec<u8>>();
+        let mut params = hex::decode(PARAMS_CBOR_HEADER[num_bytes.len() - 1])?;
         params.extend(num_bytes);
         params.extend(call_bytes);
 
@@ -264,8 +268,10 @@ impl TestExecutor {
             hex::encode(params.clone())
         );
 
+        let check = serde_cbor::from_slice::<&[u8]>(&params);
         // assert its well formatted cbor
-        if !(serde_cbor::from_slice::<&[u8]>(&params).is_ok()) {
+        if !(check.is_ok()) {
+            error!("bad cbor {:?}", check);
             return Err(ExecutorError::BadParams.into());
         }
 
