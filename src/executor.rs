@@ -256,6 +256,9 @@ impl TestExecutor {
         params.extend(num_bytes);
         params.extend(call_bytes);
 
+        // assert its well formatted cbor
+        assert!(serde_cbor::from_slice::<&[u8]>(&params).is_ok());
+
         debug!(
             "{} call params:  {}",
             method_name,
