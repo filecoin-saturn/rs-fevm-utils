@@ -97,6 +97,19 @@ impl TestExecutor {
         })
     }
 
+    /// Fetches an account by index
+    pub fn get_account(&self, idx: usize) -> Result<Account, Box<dyn Error>> {
+        if idx >= self.accounts.len() {
+            return Err(ExecutorError::UninitializedState.into());
+        }
+        Ok(self.accounts[idx])
+    }
+
+    /// Fetches an account by index
+    pub fn current_sender(&self) -> Account {
+        self.sender
+    }
+
     /// Fetches balance for a specific actor id
     pub fn get_balance(&self, actor_id: u64) -> Result<TokenAmount, Box<dyn Error>> {
         Ok(self
