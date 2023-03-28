@@ -20,7 +20,7 @@ use fvm_shared::econ::TokenAmount;
 use fvm_shared::message::Message;
 use fvm_shared::state::StateTreeVersion;
 use fvm_shared::version::NetworkVersion;
-use log::{info, trace};
+use log::{debug, info};
 use prettytable::{row, Table};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use std::collections::HashMap;
@@ -256,7 +256,7 @@ impl TestExecutor {
         params.extend(num_bytes);
         params.extend(call_bytes);
 
-        trace!(
+        debug!(
             "{} call params:  {}",
             method_name,
             hex::encode(params.clone())
