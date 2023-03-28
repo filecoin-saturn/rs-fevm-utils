@@ -1,4 +1,5 @@
 use cid::Cid;
+use ethers::abi::encode;
 use ethers::abi::{decode, ParamType, Token};
 use fil_actor_eam::Return;
 use fil_actor_evm::Method as EvmMethods;
@@ -152,11 +153,17 @@ impl TestExecutor {
         &mut self,
         wasm_compiled_path: &str,
         abi_path: &str,
+        constructor_args: Option<&[Token]>,
     ) -> Result<Contract, Box<dyn Error>> {
         // First we deploy the contract in order to actually have an actor running on the embryo address
         info!("Calling init actor (EVM)");
 
-        let evm_bin = load_evm(wasm_compiled_path)?;
+        let mut evm_bin = load_evm(wasm_compiled_path)?;
+
+        match constructor_args {
+            None => (),
+            Some(constructor_args) => evm_bin.append(&mut encode(constructor_args)),
+        }
 
         let constructor_params = CreateExternalParams(evm_bin);
 
@@ -441,7 +448,9 @@ mod executortests {
 
         let mut test_executor = TestExecutor::new().unwrap();
 
-        let mut contract = test_executor.deploy(WASM_COMPILED_PATH, ABI_PATH).unwrap();
+        let mut contract = test_executor
+            .deploy(WASM_COMPILED_PATH, ABI_PATH, None)
+            .unwrap();
 
         println!("Calling `resolve_address`");
         // type 1 address encoded as bytes
@@ -548,7 +557,9 @@ mod sendtests {
 
         let mut test_executor = TestExecutor::new().unwrap();
 
-        let contract = test_executor.deploy(WASM_COMPILED_PATH, ABI_PATH).unwrap();
+        let contract = test_executor
+            .deploy(WASM_COMPILED_PATH, ABI_PATH, None)
+            .unwrap();
 
         let actor_id = test_executor.accounts[0].0;
 
