@@ -105,7 +105,7 @@ impl TestExecutor {
         Ok(self.accounts[idx])
     }
 
-    /// Fetches an account by index
+    /// Fetches currently active account
     pub fn current_sender(&self) -> Account {
         self.accounts[self.sender]
     }
