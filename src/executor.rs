@@ -107,7 +107,7 @@ impl TestExecutor {
 
     /// Fetches an account by index
     pub fn current_sender(&self) -> Account {
-        self.sender
+        self.accounts[self.sender]
     }
 
     /// Fetches balance for a specific actor id
