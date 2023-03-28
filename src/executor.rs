@@ -20,7 +20,7 @@ use fvm_shared::econ::TokenAmount;
 use fvm_shared::message::Message;
 use fvm_shared::state::StateTreeVersion;
 use fvm_shared::version::NetworkVersion;
-use log::{info, trace};
+use log::{error, info};
 use prettytable::{row, Table};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use std::collections::HashMap;
@@ -36,8 +36,8 @@ pub struct CreateExternalParams(#[serde(with = "strict_bytes")] pub Vec<u8>);
 ///
 pub type GasResult = Vec<(String, u64)>;
 
-///
-const PARAMS_CBOR_HEADER: &str = "58";
+/// calldata is encoding as a byte array of variable length with length encoded by (1, 2, 4, 8 bytes)
+const PARAMS_CBOR_HEADER: [&str; 4] = ["58", "59", "5a", "5b"];
 
 #[derive(thiserror::Error, Debug)]
 /// Errors related to address parsing
@@ -51,6 +51,8 @@ pub enum ExecutorError {
     UninitializedSequence,
     #[error("unnable to load actors")]
     BadActors,
+    #[error("incorrectly formatted params")]
+    BadParams,
 }
 
 ///
@@ -95,6 +97,19 @@ impl TestExecutor {
             // default account to make calls from
             sender: 0,
         })
+    }
+
+    /// Fetches an account by index
+    pub fn get_account(&self, idx: usize) -> Result<Account, Box<dyn Error>> {
+        if idx >= self.accounts.len() {
+            return Err(ExecutorError::UninitializedState.into());
+        }
+        Ok(self.accounts[idx])
+    }
+
+    /// Fetches currently active account
+    pub fn current_sender(&self) -> Account {
+        self.accounts[self.sender]
     }
 
     /// Fetches balance for a specific actor id
@@ -233,21 +248,32 @@ impl TestExecutor {
         method_name: &str,
         tokens: &[Token],
     ) -> Result<(), Box<dyn Error>> {
-        let mut params = hex::decode(PARAMS_CBOR_HEADER)?;
-
         let abi_func = contract.abi.function(method_name)?;
 
         let call_bytes: Vec<u8> = abi_func.encode_input(tokens)?;
+
         let num_bytes = call_bytes.len().to_be_bytes();
-        let num_bytes = num_bytes.iter().filter(|x| **x != 0);
+        let num_bytes = num_bytes
+            .iter()
+            .filter(|x| **x != 0)
+            .map(|x| x.clone())
+            .collect::<Vec<u8>>();
+        let mut params = hex::decode(PARAMS_CBOR_HEADER[num_bytes.len() - 1])?;
         params.extend(num_bytes);
         params.extend(call_bytes);
 
-        trace!(
+        info!(
             "{} call params:  {}",
             method_name,
             hex::encode(params.clone())
         );
+
+        let check = serde_cbor::from_slice::<&[u8]>(&params);
+        // assert its well formatted cbor
+        if !(check.is_ok()) {
+            error!("bad cbor {:?}", check);
+            return Err(ExecutorError::BadParams.into());
+        }
 
         let params = RawBytes::new(params);
 
@@ -319,6 +345,10 @@ pub struct FilAddress {
 }
 
 impl FilAddress {
+    /// constructor
+    pub fn new(data: Vec<u8>) -> Self {
+        Self { data }
+    }
     /// converts to eth token
     pub fn to_eth_token(&self) -> Token {
         Token::Tuple(vec![Token::Bytes(self.data.clone())])
