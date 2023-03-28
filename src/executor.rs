@@ -332,6 +332,10 @@ pub struct FilAddress {
 }
 
 impl FilAddress {
+    /// constructor
+    pub fn new(data: Vec<u8>) -> Self {
+        Self { data }
+    }
     /// converts to eth token
     pub fn to_eth_token(&self) -> Token {
         Token::Tuple(vec![Token::Bytes(self.data.clone())])
