@@ -1,4 +1,4 @@
 
 build-actors:
-	git submodule update; cd builtin-actors; make bundle-mainnet
+	git submodule update --init; cd builtin-actors; make bundle-mainnet
 
