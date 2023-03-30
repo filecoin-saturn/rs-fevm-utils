@@ -399,7 +399,7 @@ pub fn setup_tester() -> Result<(Tester<MemoryBlockstore, DummyExterns>, Manifes
 {
     let bs = MemoryBlockstore::default();
     let actors = include_bytes!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
+        env!("OUT_DIR"),
         "/builtin-actors/output/builtin-actors-mainnet.car"
     ));
 
