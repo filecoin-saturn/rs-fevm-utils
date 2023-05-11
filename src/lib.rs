@@ -58,7 +58,7 @@ use std::sync::Arc;
 
 const DEFAULT_DERIVATION_PATH_PREFIX: &str = "m/44'/60'/0'/0/";
 
-const GAS_LIMIT_MULTIPLIER: i32 = 130;
+const GAS_LIMIT_MULTIPLIER: i32 = 150;
 // The hash length used for calculating address checksums.
 const CHECKSUM_HASH_LENGTH: usize = 4;
 
@@ -530,11 +530,11 @@ pub fn check_address_string(address: &str) -> Result<AddressData, AddressError> 
 /// assert_eq!(filecoin_to_eth_address(addr, "").await.unwrap(), "0xff000000000000000000000000000000000013e0");
 ///
 /// // test delegated addresses
-/// let addr = "t410fkkld55ioe7qg24wvt7fu6pbknb56ht7pt4zamxa";  
+/// let addr = "t410fkkld55ioe7qg24wvt7fu6pbknb56ht7pt4zamxa";
 /// assert_eq!(filecoin_to_eth_address(addr, "").await.unwrap(), "0x52963ef50e27e06d72d59fcb4f3c2a687be3cfef");
 ///
 /// // test SECP256K1 addresses
-/// let addr = "t1ypi542zmmgaltijzw4byonei5c267ev5iif2liy";  
+/// let addr = "t1ypi542zmmgaltijzw4byonei5c267ev5iif2liy";
 /// let addr_id = "t01004";
 /// assert_eq!(filecoin_to_eth_address(addr, "https://api.hyperspace.node.glif.io/rpc/v1").await.unwrap(),
 /// filecoin_to_eth_address(addr_id, "").await.unwrap());
