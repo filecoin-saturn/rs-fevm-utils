@@ -258,7 +258,8 @@ fn get_signing_wallet(private_key: U256, chain_id: u64) -> Result<Wallet<Signing
     }
     let mut bytes: [u8; 32] = [0; 32];
     private_key.to_big_endian(&mut bytes);
-    let private_key = SigningKey::from_bytes(&bytes).map_err(|_| WalletError::InvalidPrivateKey)?;
+    let private_key =
+        SigningKey::from_bytes((&bytes).into()).map_err(|_| WalletError::InvalidPrivateKey)?;
     let wallet: Wallet<SigningKey> = private_key.into();
 
     Ok(wallet.with_chain_id(chain_id))
