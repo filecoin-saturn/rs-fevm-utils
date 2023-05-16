@@ -31,8 +31,8 @@ fil_actor_miner = {  git = "https://github.com/filecoin-project/builtin-actors",
 fil_actor_evm = { git = "https://github.com/filecoin-project/builtin-actors", tag = "v10.0.0"  }
 fil_actor_multisig = { version = "10.0.0", git = "https://github.com/filecoin-project/builtin-actors", tag = "v10.0.0" }
 
-filecoin-signer = { path= "./signer" }
-extras = { path = "./extras" }
+filecoin-signer = { git="https://github.com/retrieval-markets-lab/filecoin-signing-tools", package = "filecoin-signer" }
+extras = { git = "https://github.com/retrieval-markets-lab/filecoin-signing-tools", package = "extras" }
 
 # FVM
 fvm_ipld_blockstore = { version = "0.1.1" }
