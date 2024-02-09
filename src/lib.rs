@@ -50,7 +50,7 @@ use ethers::{
     signers::Wallet,
 };
 use leb128 as leb;
-use log::{debug, info};
+use log::debug;
 use serde::Deserialize;
 use serde_json::{json, ser};
 use std::error::Error;
@@ -62,7 +62,7 @@ const DEFAULT_DERIVATION_PATH_PREFIX: &str = "m/44'/60'/0'/0/";
 
 /// A multiplier for gas limits on transactions to circumvent
 /// pending transactions on gas spikes.
-pub const GAS_LIMIT_MULTIPLIER: u64 = 150;
+pub const GAS_LIMIT_MULTIPLIER: u64 = 600;
 
 // The hash length used for calculating address checksums.
 const CHECKSUM_HASH_LENGTH: usize = 4;
@@ -244,8 +244,6 @@ fn derive_key(mnemonic: &str, path: &str, index: u32) -> Result<U256, WalletErro
         .build()
         .map_err(|_| WalletError::InvalidMnemonic)?;
 
-    info!("wallet address: {:#?}", wallet.address());
-
     let private_key = U256::from_big_endian(wallet.signer().to_bytes().as_slice());
 
     Ok(private_key)
@@ -363,7 +361,6 @@ struct StateLookupIDResp {
 ///
 /// ```
 pub fn check_address_string(address: &str) -> Result<AddressData, AddressError> {
-    info!("converting {} to ETH equivalent", address);
     let base32_alphabet = base32::Alphabet::RFC4648 { padding: false };
     if address.len() < 3 {
         return Err(AddressError::InvalidAddress);
@@ -596,8 +593,6 @@ pub async fn filecoin_to_eth_address(address: &str, rpc_url: &str) -> Result<Str
     for b in addr_buffer {
         write!(&mut s, "{:02x}", b).unwrap();
     }
-
-    info!("ETH equivalent is {}", s);
 
     Ok(s)
 }
